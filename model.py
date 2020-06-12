@@ -1,6 +1,8 @@
 import pandas as pd
+import numpy as np
 from sklearn.model_selection import train_test_split
-from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.svm import SVC
 import matplotlib.pyplot as plt
 import spacy
 import random
@@ -13,18 +15,9 @@ data = pd.read_csv("therapy_data.csv")
 df = pd.DataFrame(data)
 
 #cleaning data 
-#'views', 'questionLink', 'Unnamed: 0', 'split', 'answerText', 'questionText'
 df = df.drop(columns=['questionID', 'therapistInfo', 'therapistURL', 'upvotes', 'views', 'questionLink', 'Unnamed: 0'])
-print(df.head())
+#print(df.head())
 
-y = df['topic']
-X_train, X_test, y_train, y_test = train_test_split(df, y, test_size=0.2)
-print(X_train.shape, y_train.shape)
-print(X_test.shape, y_test.shape)
-
-vectorizer = CountVectorizer()
-X_train = vectorizer.fit(X_train)
-print(X_train)
 
 #sort the dataframe by the "split" column
 # this will group the rows in the order of "test", "train" , "val"
@@ -49,40 +42,61 @@ for ind, row in df.iterrows():
         countTrain+=1
         total+=1
         
-print("Train: "+ str(countTrain) + " Test: " + str(countTest) + " Validation: " + str(countVal)+ " Total: " + str(total))
+#print("Train: "+ str(countTrain) + " Test: " + str(countTest) + " Validation: " + str(countVal)+ " Total: " + str(total))
 
 #Create a dataframe for the Test data only
 test = df[:117]
 test_data = test.drop(columns=['topic', 'split', 'questionText', 'answerText'])
-test_data.head()
+#print(test_data.head())
 
 #Create a dataframe for the train data set
 train = df[177:]
 train_data = train.drop(columns=['split', 'questionText', 'answerText'])
-train_data.head()
+#print(train_data.head())
 
-# Distribution of answers by topic
-fig, ax = plt.subplots(figsize=(12, 8))
-train_data.groupby("topic").agg("count")["questionTitle"].sort_values(ascending=False).plot.bar(ax=ax)
-ax.set_title("Number of Responses by Topic", fontsize=25)
-ax.set_xlabel("Topic", fontsize=25)
-ax.set_ylabel("Number of Responses", fontsize=20)
-ax.set_xticklabels(ax.get_xticklabels(), fontsize=17)
-plt.tight_layout()
 
 # select random question from train data set
 nlp = spacy.load('en')
 
-random_question = train_data['questionTitle'].sample()
+#setting variables to each column name
+questionTitle = train_data['questionTitle']
+topics = train_data['topic']
+
+#This grabs a random sample question 
+random_question = questionTitle.sample()
 question = random_question.iloc[0]
+#print(question)
 
-doc = nlp(question)
 
-print(question)
+#applies nlp to questions and topics
+#docQuestion = nlp(questionTitle.to_string())
+#docTopic = nlp(topics.to_string())
 
-for token in doc:
-    print()
-    print("{} : {}".format(token, token.vector[:3]))
+df = df.drop(columns=[ 'split', 'answerText', 'questionText'])
+print(df.head())
+y = df['topic']
+X_train, X_test, y_train, y_test = train_test_split(df, y, test_size=0.2)
+
+print(X_train.shape, y_train.shape)
+print(X_test.shape, y_test.shape)
+
+#X_train = []
+#for  sentence in X_train:    
+    #X_train.append(nlp(sentence).vector)
+
+
+#y_train = []
+#for  sentence in topics:    
+    #y_train.append(nlp(sentence).vector)
+
+
+#X_test = test_data
+#X_test = test_data['questionTitle'].tolist()
+#This is where we train and fit our model
+clf = SVC()
+clf.fit(X_train, y_train)
+y_pred = clf.predict(X_test)
+
 
 
 #Create a list out of the 'questionTitle' and 'topic' series
