@@ -1,4 +1,4 @@
-from model import respond, send_message
+from model import chat
 from flask import Flask, render_template, request
 
 app = Flask(__name__)
@@ -12,7 +12,7 @@ def hello_world():
 @app.route("/get")
 def get_bot_response():
     userText = request.args.get('msg')
-    return str(respond(userText))
+    return str(chat(userText))
 
 if __name__ == '__main__':
     #app.run(host='0.0.0.0', port=8080)

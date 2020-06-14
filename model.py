@@ -1,178 +1,104 @@
-import pandas as pd
-import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.svm import SVC
-import matplotlib.pyplot as plt
-import spacy
+import nltk
+nltk.download('punkt')
+from nltk.stem.lancaster import LancasterStemmer
+stemmer = LancasterStemmer()
+
+import numpy
+import tflearn
+import tensorflow
 import random
-import time
+import json
+import pickle
+
+with open('intents2.json', encoding='utf-8') as file:
+  data = json.load(file)
+
+  words = []
+  labels = []
+  docs_x = []
+  docs_y = []
+
+  for intent in data['intents']:
+    for pattern in intent['patterns']:
+      wrds = nltk.word_tokenize(pattern)
+      words.extend(wrds)
+      docs_x.append(wrds)
+      docs_y.append(intent['tag'])
 
 
-#reading file 
-data = pd.read_csv("therapy_data.csv")
-#Create a dataframe from the dataset and then print the first 5 rows
-df = pd.DataFrame(data)
-
-#cleaning data 
-df = df.drop(columns=['questionID', 'therapistInfo', 'therapistURL', 'upvotes', 'views', 'questionLink', 'Unnamed: 0'])
-#print(df.head())
+    if intent['tag'] not in labels:
+      labels.append(intent['tag'])
 
 
-#sort the dataframe by the "split" column
-# this will group the rows in the order of "test", "train" , "val"
-df.sort_values(by=['split'], inplace=True)
-#print(df)
+  words = [stemmer.stem(w.lower()) for w in words if w not in '?']
+  words = sorted(list(set(words)))
 
-#Count number of rows with each "split" value
-#This will allow us to split our test set into another dataframe
-#It will give us numbers to see the quantity of our data
-countVal = 0
-countTest = 0
-countTrain = 0
-total = 0
-for ind, row in df.iterrows():
-    if row['split'] == 'test':
-        countTest+=1
-        total+=1
-    elif row['split'] == 'val':
-        countVal+=1
-        total+=1
-    elif row['split'] == 'train':
-        countTrain+=1
-        total+=1
-        
-#print("Train: "+ str(countTrain) + " Test: " + str(countTest) + " Validation: " + str(countVal)+ " Total: " + str(total))
+  labels = sorted(labels)
 
-#Create a dataframe for the Test data only
-test = df[:117]
-test_data = test.drop(columns=['topic', 'split', 'questionText', 'answerText'])
-#print(test_data.head())
+  training = []
+  output = []
 
-#Create a dataframe for the train data set
-train = df[177:]
-train_data = train.drop(columns=['split', 'questionText', 'answerText'])
-#print(train_data.head())
+  out_empty = [0 for _ in range(len(labels))]
 
+  for x, doc in enumerate(docs_x):
+    bag = []
+    wrds = [stemmer.stem(w) for w in doc]
 
-# select random question from train data set
-nlp = spacy.load('en')
+    for w in words:
+      if w in wrds:
+        bag.append(1)
+      else:
+        bag.append(0)
 
-#setting variables to each column name
-questionTitle = train_data['questionTitle']
-topics = train_data['topic']
+    output_row = out_empty[:]
+    output_row[labels.index(docs_y[x])] = 1
 
-#This grabs a random sample question 
-random_question = questionTitle.sample()
-question = random_question.iloc[0]
-#print(question)
+    training.append(bag)
+    output.append(output_row)
 
+  training = numpy.array(training)
+  output = numpy.array(output)
 
-#applies nlp to questions and topics
-#docQuestion = nlp(questionTitle.to_string())
-#docTopic = nlp(topics.to_string())
+  with open('data.pickle', 'wb') as f:
+    pickle.dump((words, labels, training, output), f)
+  
 
-df = df.drop(columns=[ 'split', 'answerText', 'questionText'])
-print(df.head())
-y = df['topic']
-X_train, X_test, y_train, y_test = train_test_split(df, y, test_size=0.2)
+tensorflow.reset_default_graph()
 
-print(X_train.shape, y_train.shape)
-print(X_test.shape, y_test.shape)
+net = tflearn.input_data(shape=[None, len(training[0])])
+net = tflearn.fully_connected(net, 8)
+net = tflearn.fully_connected(net, 8)
+net = tflearn.fully_connected(net, len(output[0]), activation='softmax')
+net = tflearn.regression(net)
 
-#X_train = []
-#for  sentence in X_train:    
-    #X_train.append(nlp(sentence).vector)
+model = tflearn.DNN(net)
 
+model.fit(training, output, n_epoch=1000, batch_size=8, show_metric=True)
+model.save('model.tflearn')
 
-#y_train = []
-#for  sentence in topics:    
-    #y_train.append(nlp(sentence).vector)
+def bag_of_words(s, words):
+  bag = [0 for _ in range(len(words))]
+  s_words = nltk.word_tokenize(s)
+  s_words = [stemmer.stem(w.lower()) for w in s_words]
 
+  for se in s_words:
+    for i, w in enumerate(words):
+      if w == se:
+        bag[i] = 1
 
-#X_test = test_data
-#X_test = test_data['questionTitle'].tolist()
-#This is where we train and fit our model
-clf = SVC()
-clf.fit(X_train, y_train)
-y_pred = clf.predict(X_test)
+  return numpy.array(bag)
 
+def chat(message):
+  while True:
+    inp = message
+    results = model.predict([bag_of_words(inp, words)])[0]
+    results_index = numpy.argmax(results)
+    tag = labels[results_index]
+    print(results, tag)
 
-
-#Create a list out of the 'questionTitle' and 'topic' series
-question_list = train_data['questionTitle'].tolist()
-topic_list = train_data['topic'].tolist()
-#print(topic_list)
-
-#Create a dictionary of responses
-
-responses = {"question" : ("How do you feel about that?", "What would you like to talk about?", 
-                        "Is that ok with you?", "Tell me more please", "Why?"), 
-             "statement": ("You are not alone.", "I hear what you are saying.", "Tell me more about that."),
-             "family-conflict": ("family-conflict"),
-             "marriage": ("marriage"),
-             "relationships": ("relationships"),
-             "eating-disorders": ("eating-disorders"),
-             "depression": ("depression"),
-             "anxiety": ("anxiety"),
-             "intimacy": ("intimacy"),
-             "anger-management": ("anger-management"),
-             "counseling-fundamentals": ("counseling-fundamentals"),
-             "sleep-improvement": ("sleep-improvement"),
-             "substance-abuse": ("substance-abuse"),
-             "grief-and-loss": ("grief-and-loss"),
-             "self-harm": ("self-harm"),
-             "children-adolescents": ("children-adolescents"),
-             "military-issues": ("military-issues"),
-             "social-relationships": ("social-relationships"),
-             "diagnosis": ("diagnosis"),
-             "lgbtq": ("lgbtq"),
-             "addiction": ("addiction"),
-             "professional-ethics": ("professional-ethics"),
-             "legal-regulatory": ("legal-regulatory"),
-             "human-sexuality": ("human-sexuality"),
-             "stress": ("stress"),
-             "behavioral-change": ("behavioral-change"),
-             "self-esteem": ("self-esteem"),
-             "trauma": ("trauma"),
-             "relationship-dissolution": ("relationship-dissolution"),
-             "spirituality": ("spirituality"),
-             "parenting": ("parenting"),
-             "workplace-relationships": ("workplace-relationships"),
-             "domestic-violence": ("domestic-violence"),
-            }
-
-# Create template for chat
-bot_template = "Therapy Bot : {0}"
-user_template = "User : {0} "
-
-# Define respond function that takes a parameter 'message'
-# bot's response to message
-
-def respond(message):  
-    print()
-    if message.endswith("?"):
-        # Return a random question
-        return random.choice(responses["statement"])
-    # Return a random statement
-    return random.choice(responses["question"])
-    #bot_message = random.choice(responses["statement"])
-    #print()
-    #return bot_message
-
-# Test function
-#print(respond(random_question))
-
-# Define a function send_message that sends a message to the bot
-
-def send_message(question):
-    # Print user_template including the user_message
-    #print(user_template.format(question))
-    # Get the bot's response to the message
-    response = respond(question)
-    # Print the bot template including the bot's response.
-    time.sleep(2)
-    print(bot_template.format(response))
-
-# Send a message to the bot
-send_message(question)
+    if results[results_index] > .50:
+      for tg in data['intents']:
+        if tg['tag'] == tag:
+          responses = tg['responses']       
+    
+    return random.choice(responses)
