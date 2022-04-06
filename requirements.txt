@@ -19,7 +19,7 @@ Jinja2==2.11.1
 joblib==0.14.1
 json5==0.9.1
 nltk==3.4.5
-notebook==6.0.3
+notebook==6.4.10
 numba==0.48.0
 numexpr==2.7.1
 numpy==1.18.1
